@@ -1,0 +1,29 @@
+[Unit]
+Description=OpenVPN Logger Service
+After=network.target mongodb.service
+Wants=mongodb.service
+
+[Service]
+Type=simple
+User=openvpn
+Group=openvpn
+WorkingDirectory=/opt/openvpn-logger
+ExecStart=/usr/bin/python3 /opt/openvpn-logger/openvpn_logger.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment variables
+Environment=PYTHONPATH=/opt/openvpn-logger
+Environment=LOG_LEVEL=INFO
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/openvpn
+
+[Install]
+WantedBy=multi-user.target
