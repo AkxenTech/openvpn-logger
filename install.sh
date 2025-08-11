@@ -59,27 +59,48 @@ install_system_deps() {
         sudo apt-get update
         sudo apt-get install -y python3-pip python3-venv curl gnupg
         
-        # Install MongoDB Community Edition
-        print_status "Installing MongoDB Community Edition..."
+        # Ask user about MongoDB setup
+        echo ""
+        echo "MongoDB Setup Options:"
+        echo "1) Use MongoDB Atlas (cloud.mongodb.com) - Recommended"
+        echo "2) Install local MongoDB Community Edition"
+        echo "3) Skip MongoDB installation (install manually later)"
+        read -p "Choose option (1-3): " mongodb_choice
         
-        # Import MongoDB public GPG key
-        curl -fsSL https://pgp.mongodb.com/server-7.0.asc | \
-            sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg \
-            --dearmor
-            
-        # Create list file for MongoDB
-        echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | \
-            sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
-            
-        # Update package database and install MongoDB
-        sudo apt-get update
-        sudo apt-get install -y mongodb-org
-        
-        # Start and enable MongoDB service
-        sudo systemctl start mongod
-        sudo systemctl enable mongod
-        
-        print_status "MongoDB installed and started"
+        case $mongodb_choice in
+            1)
+                print_status "Using MongoDB Atlas - no local MongoDB installation needed"
+                print_status "Make sure to update MONGODB_URI in your .env file with your Atlas connection string"
+                ;;
+            2)
+                print_status "Installing MongoDB Community Edition locally..."
+                
+                # Import MongoDB public GPG key
+                curl -fsSL https://pgp.mongodb.com/server-7.0.asc | \
+                    sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg \
+                    --dearmor
+                    
+                # Create list file for MongoDB
+                echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | \
+                    sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+                    
+                # Update package database and install MongoDB
+                sudo apt-get update
+                sudo apt-get install -y mongodb-org
+                
+                # Start and enable MongoDB service
+                sudo systemctl start mongod
+                sudo systemctl enable mongod
+                
+                print_status "MongoDB installed and started locally"
+                ;;
+            3)
+                print_warning "Skipping MongoDB installation. You'll need to install it manually later."
+                ;;
+            *)
+                print_warning "Invalid choice. Assuming MongoDB Atlas usage."
+                ;;
+        esac
         
     elif command -v yum &> /dev/null; then
         # CentOS/RHEL
@@ -117,11 +138,26 @@ setup_config() {
         if [ -f env.example ]; then
             cp env.example .env
             print_status "Created .env file from env.example"
+            
+            # Provide guidance for MongoDB Atlas users
+            echo ""
+            print_status "Configuration file created!"
+            print_warning "IMPORTANT: You need to edit the .env file with your actual configuration:"
+            echo ""
+            echo "For MongoDB Atlas users:"
+            echo "1. Get your connection string from cloud.mongodb.com"
+            echo "2. Update MONGODB_URI in .env file"
+            echo "3. Update SERVER_NAME and SERVER_LOCATION"
+            echo "4. Verify OPENVPN_LOG_PATH points to your actual log file"
+            echo ""
+            echo "Example MongoDB Atlas URI:"
+            echo "MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/openvpn_logs?retryWrites=true&w=majority"
+            echo ""
         else
             print_warning "env.example not found. Creating basic .env file..."
             cat > .env << EOF
 # MongoDB Atlas Configuration
-MONGODB_URI=mongodb://localhost:27017/openvpn_logs
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/openvpn_logs?retryWrites=true&w=majority
 MONGODB_DATABASE=openvpn_logs
 MONGODB_COLLECTION=connection_logs
 
