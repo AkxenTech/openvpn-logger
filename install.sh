@@ -57,7 +57,30 @@ install_system_deps() {
     if command -v apt-get &> /dev/null; then
         # Debian/Ubuntu
         sudo apt-get update
-        sudo apt-get install -y python3-pip python3-venv mongodb
+        sudo apt-get install -y python3-pip python3-venv curl gnupg
+        
+        # Install MongoDB Community Edition
+        print_status "Installing MongoDB Community Edition..."
+        
+        # Import MongoDB public GPG key
+        curl -fsSL https://pgp.mongodb.com/server-7.0.asc | \
+            sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg \
+            --dearmor
+            
+        # Create list file for MongoDB
+        echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | \
+            sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+            
+        # Update package database and install MongoDB
+        sudo apt-get update
+        sudo apt-get install -y mongodb-org
+        
+        # Start and enable MongoDB service
+        sudo systemctl start mongod
+        sudo systemctl enable mongod
+        
+        print_status "MongoDB installed and started"
+        
     elif command -v yum &> /dev/null; then
         # CentOS/RHEL
         sudo yum install -y python3-pip mongodb-org
