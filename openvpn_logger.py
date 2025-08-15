@@ -47,12 +47,15 @@ class ConnectionEvent:
 
 
 class OpenVPNLogParser:
-    """Parses OpenVPN status log files to extract connection events"""
+    """Parses OpenVPN log files to extract connection events"""
     
-    def __init__(self, status_path: str):
+    def __init__(self, status_path: str, log_path: str = None):
         self.status_path = Path(status_path)
+        self.log_path = Path(log_path) if log_path else None
         self.last_position = 0
         self.last_clients = set()  # Track previous clients for change detection
+        self.active_sessions = {}  # Track active sessions to prevent duplicate notifications
+        self.log_last_position = 0  # Track position in main log file
         
     def get_new_lines(self) -> List[str]:
         """Read new lines from the status log file since last check"""
@@ -69,6 +72,53 @@ class OpenVPNLogParser:
         except Exception as e:
             logger.error(f"Error reading status log file: {e}")
             return []
+    
+    def get_new_log_lines(self) -> List[str]:
+        """Read new lines from the main OpenVPN log file since last check"""
+        if not self.log_path or not self.log_path.exists():
+            return []
+            
+        try:
+            with open(self.log_path, 'r') as f:
+                f.seek(self.log_last_position)
+                new_lines = f.readlines()
+                self.log_last_position = f.tell()
+                return new_lines
+        except Exception as e:
+            logger.error(f"Error reading main log file: {e}")
+            return []
+    
+    def extract_username_from_log(self, line: str) -> tuple:
+        """Extract username and session info from log line"""
+        # Pattern: IP:PORT [username] Peer Connection Initiated
+        import re
+        pattern = r'(\d+\.\d+\.\d+\.\d+):(\d+)\s+\[([^\]]+)\]\s+Peer Connection Initiated'
+        match = re.search(pattern, line)
+        
+        if match:
+            client_ip = match.group(1)
+            client_port = int(match.group(2))
+            username = match.group(3)
+            session_id = f"{client_ip}:{client_port}"
+            return username, session_id, client_ip, client_port
+        
+        return None, None, None, None
+    
+    def detect_logout_from_log(self, line: str) -> tuple:
+        """Detect logout events from SIGTERM messages"""
+        # Pattern: username/IP:PORT SIGTERM[soft,remote-exit] received
+        import re
+        pattern = r'([^/]+)/(\d+\.\d+\.\d+\.\d+):(\d+)\s+SIGTERM\[soft,remote-exit\]'
+        match = re.search(pattern, line)
+        
+        if match:
+            username = match.group(1)
+            client_ip = match.group(2)
+            client_port = int(match.group(3))
+            session_id = f"{client_ip}:{client_port}"
+            return username, session_id, client_ip, client_port
+        
+        return None, None, None, None
     
     def parse_status_log(self, content: str) -> List[ConnectionEvent]:
         """Parse the entire status log content and extract connection events"""
@@ -156,21 +206,69 @@ class OpenVPNLogParser:
         return events
     
     def process_logs(self) -> List[ConnectionEvent]:
-        """Process the status log and return new events"""
+        """Process both log files and return new events"""
+        events = []
+        
         try:
-            if not self.status_path.exists():
-                return []
+            # Process main log file for usernames and logout events
+            if self.log_path and self.log_path.exists():
+                log_lines = self.get_new_log_lines()
+                for line in log_lines:
+                    # Check for login events with username
+                    username, session_id, client_ip, client_port = self.extract_username_from_log(line)
+                    if username and session_id:
+                        # Store username for this session
+                        self.active_sessions[session_id] = username
+                        logger.debug(f"Found login for user {username} with session {session_id}")
+                    
+                    # Check for logout events
+                    username, session_id, client_ip, client_port = self.detect_logout_from_log(line)
+                    if username and session_id:
+                        # Create logout event
+                        events.append(ConnectionEvent(
+                            timestamp=datetime.now(),
+                            event_type='disconnect',
+                            client_ip=client_ip,
+                            client_port=client_port,
+                            username=username,
+                            server_name=os.getenv('SERVER_NAME'),
+                            server_location=os.getenv('SERVER_LOCATION')
+                        ))
+                        # Remove from active sessions
+                        if session_id in self.active_sessions:
+                            del self.active_sessions[session_id]
+                        logger.debug(f"Found logout for user {username} with session {session_id}")
             
-            # Read the entire status log
-            with open(self.status_path, 'r') as f:
-                content = f.read()
+            # Process status log for connection events
+            if self.status_path.exists():
+                with open(self.status_path, 'r') as f:
+                    content = f.read()
+                
+                # Parse status log events
+                status_events = self.parse_status_log(content)
+                
+                # Filter and enhance events with usernames
+                for event in status_events:
+                    session_id = f"{event.client_ip}:{event.client_port}"
+                    
+                    # Add username if available from active sessions
+                    if session_id in self.active_sessions:
+                        event.username = self.active_sessions[session_id]
+                    
+                    # Only add connect events if we haven't seen this session before
+                    if event.event_type == 'connect':
+                        if session_id not in self.active_sessions:
+                            events.append(event)
+                            logger.debug(f"New connection event for session {session_id}")
+                        else:
+                            logger.debug(f"Skipping duplicate connect event for session {session_id}")
+                    else:
+                        events.append(event)
             
-            # Parse for events
-            events = self.parse_status_log(content)
             return events
             
         except Exception as e:
-            logger.error(f"Error processing status log: {e}")
+            logger.error(f"Error processing logs: {e}")
             return []
 
 
@@ -312,7 +410,9 @@ class OpenVPNLogger:
     """Main OpenVPN logger application"""
     
     def __init__(self):
-        self.parser = OpenVPNLogParser(os.getenv('OPENVPN_STATUS_PATH'))
+        status_path = os.getenv('OPENVPN_STATUS_PATH')
+        log_path = os.getenv('OPENVPN_LOG_PATH')
+        self.parser = OpenVPNLogParser(status_path, log_path)
         self.mongo_logger = MongoDBLogger()
         self.system_monitor = SystemMonitor()
         self.notification_manager = NotificationManager()
