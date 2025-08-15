@@ -64,7 +64,7 @@ class OpenVPNLogParser:
     def load_positions(self):
         """Load saved positions and notified sessions from file to avoid reprocessing on restart"""
         try:
-            position_file = Path("/tmp/openvpn_logger_positions.json")
+            position_file = Path("/var/log/openvpn/positions.json")
             if position_file.exists():
                 import json
                 with open(position_file, 'r') as f:
@@ -83,7 +83,7 @@ class OpenVPNLogParser:
         logger.info("save_positions() method called")
         try:
             import json
-            position_file = Path("/tmp/openvpn_logger_positions.json")
+            position_file = Path("/var/log/openvpn/positions.json")
             logger.info(f"Attempting to save to: {position_file}")
             
             positions = {
