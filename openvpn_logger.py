@@ -208,7 +208,7 @@ class MongoDBLogger:
     
     def log_connection_event(self, event: ConnectionEvent):
         """Log a connection event to MongoDB"""
-        if not self.collection:
+        if self.collection is None:
             logger.error("MongoDB not connected")
             return
             
@@ -240,7 +240,7 @@ class MongoDBLogger:
     
     def get_connection_stats(self, hours: int = 24) -> Dict:
         """Get connection statistics for the last N hours"""
-        if not self.collection:
+        if self.collection is None:
             return {}
             
         try:
@@ -344,7 +344,7 @@ class OpenVPNLogger:
             stats = self.system_monitor.get_system_stats()
             interfaces = self.system_monitor.get_network_interfaces()
             
-            if self.mongo_logger.collection:
+            if self.mongo_logger.collection is not None:
                 system_data = {
                     'timestamp': datetime.utcnow(),
                     'type': 'system_stats',
