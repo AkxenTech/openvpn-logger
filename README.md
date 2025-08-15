@@ -26,6 +26,208 @@ A comprehensive logging and monitoring system for OpenVPN servers that tracks co
 - OpenVPN server with logging enabled
 - Access to OpenVPN log files
 
+## OpenVPN Configuration
+
+**Important**: Before running the OpenVPN Logger, you must configure your OpenVPN server to write logs to files.
+
+### 1. Edit OpenVPN Server Configuration
+
+Edit your OpenVPN server configuration file (typically `/etc/openvpn/server/server.conf`):
+
+```bash
+sudo nano /etc/openvpn/server/server.conf
+```
+
+### 2. Add Logging Directives
+
+Add these lines to your OpenVPN server configuration:
+
+```conf
+# Logging configuration
+log /var/log/openvpn/server.log
+status /var/log/openvpn/status.log
+verb 3
+```
+
+### 3. Create Log Files
+
+Create the log files with proper permissions:
+
+```bash
+# Create log directory if it doesn't exist
+sudo mkdir -p /var/log/openvpn
+
+# Create log files
+sudo touch /var/log/openvpn/server.log
+sudo touch /var/log/openvpn/status.log
+
+# Set proper ownership and permissions
+sudo chown root:root /var/log/openvpn/server.log
+sudo chown root:root /var/log/openvpn/status.log
+sudo chmod 644 /var/log/openvpn/server.log
+sudo chmod 644 /var/log/openvpn/status.log
+
+# Create positions file for state persistence
+sudo touch /var/log/openvpn/positions.json
+sudo chown openvpn:openvpn /var/log/openvpn/positions.json
+sudo chmod 644 /var/log/openvpn/positions.json
+```
+
+### 4. Restart OpenVPN Server
+
+Restart your OpenVPN server to apply the configuration:
+
+```bash
+sudo systemctl restart openvpn-server@server
+```
+
+### 5. Verify Logging
+
+Check that logs are being written:
+
+```bash
+# Check if logs are being written
+sudo tail -f /var/log/openvpn/server.log
+sudo tail -f /var/log/openvpn/status.log
+```
+
+### 6. Configure Log Rotation
+
+To prevent disk space issues, configure log rotation for OpenVPN logs:
+
+#### Create Logrotate Configuration
+
+Create a logrotate configuration file:
+
+```bash
+sudo nano /etc/logrotate.d/openvpn
+```
+
+Add the following configuration:
+
+```conf
+/var/log/openvpn/*.log {
+    daily
+    missingok
+    rotate 7
+    compress
+    delaycompress
+    notifempty
+    create 644 root root
+    postrotate
+        systemctl reload openvpn-server@server
+    endscript
+}
+```
+
+#### Log Rotation Settings Explained
+
+- **`daily`**: Rotate logs daily
+- **`missingok`**: Don't error if log files are missing
+- **`rotate 7`**: Keep 7 rotated log files (1 week)
+- **`compress`**: Compress old log files
+- **`delaycompress`**: Don't compress the most recent rotated file
+- **`notifempty`**: Don't rotate empty files
+- **`create 644 root root`**: Create new log files with proper permissions
+- **`postrotate`**: Reload OpenVPN service after rotation
+
+#### Test Log Rotation
+
+Test the configuration:
+
+```bash
+# Test logrotate configuration
+sudo logrotate -d /etc/logrotate.d/openvpn
+
+# Force rotation (for testing)
+sudo logrotate -f /etc/logrotate.d/openvpn
+```
+
+### 7. Monitor Disk Usage
+
+Set up monitoring to prevent disk space issues:
+
+```bash
+# Check current log sizes
+sudo du -sh /var/log/openvpn/
+
+# Monitor disk usage
+df -h /var/log/
+
+# Check logrotate status
+sudo logrotate -d /etc/logrotate.d/openvpn
+```
+
+### 8. Positions File Management
+
+The `positions.json` file tracks processed log positions and notified sessions to prevent duplicates. This file can grow over time and should be managed:
+
+#### Monitor Positions File Size
+
+```bash
+# Check positions file size
+ls -lh /var/log/openvpn/positions.json
+
+# View current tracked sessions count
+jq '.notified_sessions | length' /var/log/openvpn/positions.json
+```
+
+#### Clean Up Old Sessions (Optional)
+
+If the positions file becomes too large, you can clean old sessions:
+
+```bash
+# Backup current positions
+sudo cp /var/log/openvpn/positions.json /var/log/openvpn/positions.json.backup
+
+# Remove sessions older than 30 days (keeps recent positions)
+sudo jq 'del(.notified_sessions[] | select(test(".*:.*:.*") | not))' /var/log/openvpn/positions.json > /tmp/cleaned_positions.json
+sudo mv /tmp/cleaned_positions.json /var/log/openvpn/positions.json
+sudo chown openvpn:openvpn /var/log/openvpn/positions.json
+```
+
+#### Automatic Cleanup Script
+
+Create a cleanup script to run periodically:
+
+```bash
+sudo nano /usr/local/bin/cleanup-openvpn-positions.sh
+```
+
+Add this content:
+
+```bash
+#!/bin/bash
+# Clean up old positions file entries
+
+POSITIONS_FILE="/var/log/openvpn/positions.json"
+MAX_SESSIONS=1000
+
+if [ -f "$POSITIONS_FILE" ]; then
+    # Get current session count
+    SESSION_COUNT=$(jq '.notified_sessions | length' "$POSITIONS_FILE" 2>/dev/null || echo "0")
+    
+    if [ "$SESSION_COUNT" -gt "$MAX_SESSIONS" ]; then
+        # Keep only the most recent sessions
+        jq --arg max "$MAX_SESSIONS" '.notified_sessions = (.notified_sessions | .[-($max|tonumber):])' "$POSITIONS_FILE" > /tmp/cleaned_positions.json
+        mv /tmp/cleaned_positions.json "$POSITIONS_FILE"
+        chown openvpn:openvpn "$POSITIONS_FILE"
+        echo "$(date): Cleaned positions file, reduced from $SESSION_COUNT to $MAX_SESSIONS sessions"
+    fi
+fi
+```
+
+Make it executable and add to crontab:
+
+```bash
+sudo chmod +x /usr/local/bin/cleanup-openvpn-positions.sh
+
+# Add to crontab to run daily at 2 AM
+sudo crontab -e
+# Add this line:
+# 0 2 * * * /usr/local/bin/cleanup-openvpn-positions.sh
+```
+
 ## Installation
 
 1. **Clone the repository**:
@@ -62,8 +264,13 @@ MONGODB_DATABASE=openvpn_logs
 MONGODB_COLLECTION=connection_logs
 
 # OpenVPN Configuration
-OPENVPN_LOG_PATH=/var/log/openvpn/openvpn.log
+OPENVPN_LOG_PATH=/var/log/openvpn/server.log
 OPENVPN_STATUS_PATH=/var/log/openvpn/status.log
+
+# State Persistence (for preventing duplicate events)
+POSITIONS_FILE=/var/log/openvpn/positions.json
+# Maximum number of tracked sessions to prevent memory bloat (default: 1000)
+MAX_TRACKED_SESSIONS=1000
 
 # Logging Configuration
 LOG_LEVEL=INFO

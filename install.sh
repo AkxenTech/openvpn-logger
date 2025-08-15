@@ -162,8 +162,12 @@ MONGODB_DATABASE=openvpn_logs
 MONGODB_COLLECTION=connection_logs
 
 # OpenVPN Configuration
-OPENVPN_LOG_PATH=/var/log/openvpn/openvpn.log
+OPENVPN_LOG_PATH=/var/log/openvpn/server.log
 OPENVPN_STATUS_PATH=/var/log/openvpn/status.log
+
+# State Persistence (for preventing duplicate events)
+POSITIONS_FILE=/var/log/openvpn/positions.json
+MAX_TRACKED_SESSIONS=1000
 
 # Logging Configuration
 LOG_LEVEL=INFO
@@ -178,6 +182,30 @@ EOF
     else
         print_status ".env file already exists"
     fi
+}
+
+# Setup log rotation
+setup_log_rotation() {
+    print_status "Setting up log rotation..."
+    
+    # Create logrotate configuration for OpenVPN logs
+    sudo tee /etc/logrotate.d/openvpn > /dev/null << 'EOF'
+/var/log/openvpn/*.log {
+    daily
+    missingok
+    rotate 7
+    compress
+    delaycompress
+    notifempty
+    create 644 root root
+    postrotate
+        systemctl reload openvpn-server@server
+    endscript
+}
+EOF
+    
+    print_status "Log rotation configured for OpenVPN logs"
+    print_status "Logs will be rotated daily and kept for 7 days"
 }
 
 # Create systemd service
@@ -221,6 +249,7 @@ main() {
     create_venv
     install_python_deps
     setup_config
+    setup_log_rotation
     setup_systemd
     test_config
     
