@@ -80,17 +80,30 @@ class OpenVPNLogParser:
     
     def save_positions(self):
         """Save current positions and notified sessions to file"""
+        logger.info("save_positions() method called")
         try:
             import json
             position_file = Path("/tmp/openvpn_logger_positions.json")
+            logger.info(f"Attempting to save to: {position_file}")
+            
             positions = {
                 'status_position': self.last_position,
                 'log_position': self.log_last_position,
                 'notified_sessions': list(self.notified_sessions)
             }
+            logger.info(f"Positions data: {positions}")
+            
             with open(position_file, 'w') as f:
                 json.dump(positions, f)
-            logger.info(f"Saved positions: status={self.last_position}, log={self.log_last_position}, notified_sessions={len(self.notified_sessions)}")
+            
+            logger.info(f"Successfully saved positions: status={self.last_position}, log={self.log_last_position}, notified_sessions={len(self.notified_sessions)}")
+            
+            # Verify file was created
+            if position_file.exists():
+                logger.info(f"File confirmed to exist: {position_file}")
+            else:
+                logger.error(f"File was not created: {position_file}")
+                
         except Exception as e:
             logger.error(f"Could not save positions: {e}")
             import traceback
