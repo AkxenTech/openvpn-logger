@@ -282,7 +282,7 @@ class OpenVPNLogParser:
                 # Parse status log events
                 status_events = self.parse_status_log(content)
                 
-                # Filter and enhance events with usernames
+                # Enhance events with usernames
                 for event in status_events:
                     session_id = f"{event.client_ip}:{event.client_port}"
                     
@@ -290,16 +290,7 @@ class OpenVPNLogParser:
                     if session_id in self.active_sessions:
                         event.username = self.active_sessions[session_id]
                     
-                    # Only add events if we haven't notified for this session before
-                    if event.event_type in ['connect', 'authenticated']:
-                        if session_id not in self.notified_sessions:
-                            events.append(event)
-                            self.notified_sessions.add(session_id)
-                            logger.debug(f"New {event.event_type} event for session {session_id}")
-                        else:
-                            logger.debug(f"Skipping duplicate {event.event_type} event for session {session_id}")
-                    else:
-                        events.append(event)
+                    events.append(event)
             
             return events
             
@@ -459,7 +450,25 @@ class OpenVPNLogger:
         try:
             events = self.parser.process_logs()
             
+            # Filter out duplicate events before logging to DB
+            filtered_events = []
             for event in events:
+                session_id = f"{event.client_ip}:{event.client_port}"
+                
+                # Only log events if we haven't notified for this session before
+                if event.event_type in ['connect', 'authenticated']:
+                    if session_id not in self.parser.notified_sessions:
+                        filtered_events.append(event)
+                        self.parser.notified_sessions.add(session_id)
+                        logger.debug(f"New {event.event_type} event for session {session_id}")
+                    else:
+                        logger.debug(f"Skipping duplicate {event.event_type} event for session {session_id}")
+                else:
+                    # Always log disconnect events
+                    filtered_events.append(event)
+            
+            # Log filtered events to database and send notifications
+            for event in filtered_events:
                 self.mongo_logger.log_connection_event(event)
                 
                 # Send notification for connection events
