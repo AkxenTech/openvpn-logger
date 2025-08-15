@@ -66,7 +66,7 @@ class PushoverNotifier:
             return False
     
     def notify_connection_event(self, event_type: str, client_ip: str, username: str = None, 
-                              virtual_ip: str = None, server_name: str = None) -> bool:
+                              virtual_ip: str = None, server_name: str = None, client_port: int = None) -> bool:
         """Send notification for connection events"""
         
         # Determine notification settings based on event type
@@ -91,7 +91,13 @@ class PushoverNotifier:
         message_parts = []
         if username and username != 'UNDEF':
             message_parts.append(f"User: {username}")
-        message_parts.append(f"IP: {client_ip}")
+        
+        # Include port number in IP display
+        if client_port:
+            message_parts.append(f"IP: {client_ip}:{client_port}")
+        else:
+            message_parts.append(f"IP: {client_ip}")
+            
         if virtual_ip:
             message_parts.append(f"Virtual IP: {virtual_ip}")
         if server_name:
@@ -162,12 +168,12 @@ class NotificationManager:
             logger.info("Pushover notifications disabled - missing API_TOKEN or USER_KEY")
     
     def notify_connection_event(self, event_type: str, client_ip: str, username: str = None,
-                              virtual_ip: str = None, server_name: str = None) -> bool:
+                              virtual_ip: str = None, server_name: str = None, client_port: int = None) -> bool:
         """Send notification for connection events"""
         if not self.enabled or not self.pushover:
             return False
         
-        return self.pushover.notify_connection_event(event_type, client_ip, username, virtual_ip, server_name)
+        return self.pushover.notify_connection_event(event_type, client_ip, username, virtual_ip, server_name, client_port)
     
     def notify_system_alert(self, alert_type: str, details: str, server_name: str = None) -> bool:
         """Send notification for system alerts"""
