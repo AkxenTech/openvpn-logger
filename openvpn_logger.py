@@ -474,17 +474,16 @@ class OpenVPNLogger:
             for event in events:
                 session_id = f"{event.client_ip}:{event.client_port}"
                 
-                # Only log events if we haven't notified for this session before
-                if event.event_type in ['connect', 'authenticated']:
-                    if session_id not in self.parser.notified_sessions:
-                        filtered_events.append(event)
-                        self.parser.notified_sessions.add(session_id)
-                        logger.debug(f"New {event.event_type} event for session {session_id}")
-                    else:
-                        logger.debug(f"Skipping duplicate {event.event_type} event for session {session_id}")
-                else:
-                    # Always log disconnect events
+                # Create a unique identifier for this specific event
+                event_key = f"{session_id}:{event.event_type}"
+                
+                # Only log events if we haven't notified for this specific event before
+                if event_key not in self.parser.notified_sessions:
                     filtered_events.append(event)
+                    self.parser.notified_sessions.add(event_key)
+                    logger.debug(f"New {event.event_type} event for session {session_id}")
+                else:
+                    logger.debug(f"Skipping duplicate {event.event_type} event for session {session_id}")
             
             logger.info(f"Filtered to {len(filtered_events)} events to process")
             
