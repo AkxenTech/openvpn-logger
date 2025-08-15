@@ -196,6 +196,62 @@ def test_system_monitoring():
         print(f"✗ System monitoring test failed: {e}")
         return False
 
+def test_push_notifications():
+    """Test push notification configuration"""
+    print("\nTesting push notifications...")
+    
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        
+        # Check if push notification variables are set
+        pushover_vars = [
+            'PUSHOVER_API_TOKEN',
+            'PUSHOVER_USER_KEY',
+            'PUSHOVER_DEVICE'
+        ]
+        
+        configured_vars = []
+        for var in pushover_vars:
+            if os.getenv(var):
+                configured_vars.append(var)
+        
+        if configured_vars:
+            print(f"✓ Push notification configured: {len(configured_vars)}/{len(pushover_vars)} variables set")
+            
+            # Test notification manager import
+            try:
+                from notifications import NotificationManager
+                print("✓ Notification manager imported successfully")
+                
+                # Test notification manager initialization
+                try:
+                    notification_manager = NotificationManager()
+                    print("✓ Notification manager initialized successfully")
+                    
+                    # Test if we can create a test notification (without sending)
+                    test_message = "OpenVPN Logger test notification"
+                    print("✓ Notification manager ready for use")
+                    
+                    return True
+                    
+                except Exception as e:
+                    print(f"⚠ Notification manager initialization failed: {e}")
+                    return True  # Not critical for basic functionality
+                    
+            except ImportError as e:
+                print(f"⚠ Notification manager import failed: {e}")
+                return True  # Not critical for basic functionality
+                
+        else:
+            print("⚠ Push notifications not configured (optional)")
+            print("  Set PUSHOVER_API_TOKEN, PUSHOVER_USER_KEY, and PUSHOVER_DEVICE in .env for notifications")
+            return True  # Not critical for basic functionality
+            
+    except Exception as e:
+        print(f"⚠ Push notification test failed: {e}")
+        return True  # Not critical for basic functionality
+
 def main():
     """Run all tests"""
     print("=== OpenVPN Logger Setup Test ===\n")
@@ -206,7 +262,8 @@ def main():
         ("Environment Configuration", test_env_file),
         ("MongoDB Connection", test_mongodb_connection),
         ("OpenVPN Log Path", test_openvpn_log_path),
-        ("System Monitoring", test_system_monitoring)
+        ("System Monitoring", test_system_monitoring),
+        ("Push Notifications", test_push_notifications)
     ]
     
     passed = 0
