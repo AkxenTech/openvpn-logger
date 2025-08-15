@@ -64,7 +64,7 @@ class OpenVPNLogParser:
     def load_positions(self):
         """Load saved positions and notified sessions from file to avoid reprocessing on restart"""
         try:
-            position_file = Path("/opt/openvpn-logger/positions.json")
+            position_file = Path("/tmp/openvpn_logger_positions.json")
             if position_file.exists():
                 import json
                 with open(position_file, 'r') as f:
@@ -73,6 +73,8 @@ class OpenVPNLogParser:
                     self.log_last_position = positions.get('log_position', 0)
                     self.notified_sessions = set(positions.get('notified_sessions', []))
                     logger.info(f"Loaded positions: status={self.last_position}, log={self.log_last_position}, notified_sessions={len(self.notified_sessions)}")
+            else:
+                logger.info("No existing positions file found, starting fresh")
         except Exception as e:
             logger.warning(f"Could not load positions: {e}")
     
@@ -80,7 +82,7 @@ class OpenVPNLogParser:
         """Save current positions and notified sessions to file"""
         try:
             import json
-            position_file = Path("/opt/openvpn-logger/positions.json")
+            position_file = Path("/tmp/openvpn_logger_positions.json")
             positions = {
                 'status_position': self.last_position,
                 'log_position': self.log_last_position,
@@ -88,9 +90,11 @@ class OpenVPNLogParser:
             }
             with open(position_file, 'w') as f:
                 json.dump(positions, f)
-            logger.debug(f"Saved positions: status={self.last_position}, log={self.log_last_position}, notified_sessions={len(self.notified_sessions)}")
+            logger.info(f"Saved positions: status={self.last_position}, log={self.log_last_position}, notified_sessions={len(self.notified_sessions)}")
         except Exception as e:
-            logger.warning(f"Could not save positions: {e}")
+            logger.error(f"Could not save positions: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
         
     def get_new_lines(self) -> List[str]:
         """Read new lines from the status log file since last check"""
