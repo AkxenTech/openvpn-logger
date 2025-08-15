@@ -467,6 +467,7 @@ class OpenVPNLogger:
         """Process new log entries"""
         try:
             events = self.parser.process_logs()
+            logger.info(f"Processed {len(events)} events from logs")
             
             # Filter out duplicate events before logging to DB
             filtered_events = []
@@ -485,6 +486,8 @@ class OpenVPNLogger:
                     # Always log disconnect events
                     filtered_events.append(event)
             
+            logger.info(f"Filtered to {len(filtered_events)} events to process")
+            
             # Log filtered events to database and send notifications
             for event in filtered_events:
                 self.mongo_logger.log_connection_event(event)
@@ -499,11 +502,15 @@ class OpenVPNLogger:
                     client_port=event.client_port
                 )
             
+            logger.info("About to save positions")
             # Save positions and notified sessions after processing
             self.parser.save_positions()
+            logger.info("Positions saved successfully")
                     
         except Exception as e:
             logger.error(f"Error processing logs: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
     
     def log_system_stats(self):
         """Log system statistics"""
