@@ -229,11 +229,35 @@ def test_push_notifications():
                     notification_manager = NotificationManager()
                     print("✓ Notification manager initialized successfully")
                     
-                    # Test if we can create a test notification (without sending)
-                    test_message = "OpenVPN Logger test notification"
-                    print("✓ Notification manager ready for use")
-                    
-                    return True
+                    # Ask user if they want to send a test notification
+                    print("\nSend test notification? (y/N): ", end="")
+                    try:
+                        response = input().strip().lower()
+                        if response in ['y', 'yes']:
+                            # Test sending a sample notification
+                            test_message = "OpenVPN Logger test notification - Setup verification successful"
+                            print("Sending test notification...")
+                            try:
+                                result = notification_manager.send_notification(
+                                    title="OpenVPN Logger Test",
+                                    message=test_message,
+                                    priority=0  # Normal priority for test
+                                )
+                                if result:
+                                    print("✓ Test notification sent successfully")
+                                    print("  Check your device for the notification")
+                                else:
+                                    print("⚠ Test notification failed to send")
+                                return True
+                            except Exception as e:
+                                print(f"⚠ Test notification failed: {e}")
+                                return True  # Not critical for basic functionality
+                        else:
+                            print("✓ Skipped test notification")
+                            return True
+                    except (EOFError, KeyboardInterrupt):
+                        print("\n✓ Skipped test notification")
+                        return True
                     
                 except Exception as e:
                     print(f"⚠ Notification manager initialization failed: {e}")
