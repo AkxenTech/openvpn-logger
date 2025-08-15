@@ -143,18 +143,20 @@ def test_openvpn_log_path():
     from dotenv import load_dotenv
     load_dotenv()
     
-    log_path = os.getenv('OPENVPN_LOG_PATH', '/var/log/openvpn/openvpn.log')
-    path = Path(log_path)
+    # Test both log and status files
+    log_path = os.getenv('OPENVPN_LOG_PATH', '/var/log/openvpn/server.log')
+    status_path = os.getenv('OPENVPN_STATUS_PATH', '/var/log/openvpn/status.log')
     
-    if path.exists():
+    log_file = Path(log_path)
+    status_file = Path(status_path)
+    
+    # Test log file
+    if log_file.exists():
         print(f"✓ OpenVPN log file exists: {log_path}")
-        
-        # Test read access
         try:
-            with open(path, 'r') as f:
+            with open(log_file, 'r') as f:
                 f.read(1)  # Try to read one character
             print("✓ OpenVPN log file is readable")
-            return True
         except PermissionError:
             print(f"✗ Permission denied reading {log_path}")
             return False
@@ -163,8 +165,25 @@ def test_openvpn_log_path():
             return False
     else:
         print(f"⚠ OpenVPN log file not found: {log_path}")
-        print("This is normal if OpenVPN is not running or logs are in a different location")
-        return True  # Not a critical error
+    
+    # Test status file
+    if status_file.exists():
+        print(f"✓ OpenVPN status file exists: {status_path}")
+        try:
+            with open(status_file, 'r') as f:
+                f.read(1)  # Try to read one character
+            print("✓ OpenVPN status file is readable")
+        except PermissionError:
+            print(f"✗ Permission denied reading {status_path}")
+            return False
+        except Exception as e:
+            print(f"✗ Error reading status file: {e}")
+            return False
+    else:
+        print(f"⚠ OpenVPN status file not found: {status_path}")
+    
+    print("This is normal if OpenVPN is not running or logs are in a different location")
+    return True  # Not a critical error
 
 def test_system_monitoring():
     """Test system monitoring capabilities"""
