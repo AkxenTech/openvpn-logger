@@ -56,6 +56,7 @@ class OpenVPNLogParser:
         self.last_clients = set()  # Track previous clients for change detection
         self.active_sessions = {}  # Track active sessions to prevent duplicate notifications
         self.log_last_position = 0  # Track position in main log file
+        self.notified_sessions = set()  # Track which sessions have been notified to prevent duplicates
         
         # Load persisted positions to avoid reprocessing on restart
         self.load_positions()
@@ -201,19 +202,20 @@ class OpenVPNLogParser:
                             server_location=os.getenv('SERVER_LOCATION')
                         ))
                     
-                    # Also create an authenticated event for current connections
-                    events.append(ConnectionEvent(
-                        timestamp=datetime.now(),
-                        event_type='authenticated',
-                        client_ip=client_ip,
-                        client_port=client_port,
-                        username=username,
-                        virtual_ip=virtual_address,
-                        bytes_received=bytes_received,
-                        bytes_sent=bytes_sent,
-                        server_name=os.getenv('SERVER_NAME'),
-                        server_location=os.getenv('SERVER_LOCATION')
-                    ))
+                    # Only create authenticated event for NEW connections (not existing ones)
+                    if client_id not in self.last_clients:
+                        events.append(ConnectionEvent(
+                            timestamp=datetime.now(),
+                            event_type='authenticated',
+                            client_ip=client_ip,
+                            client_port=client_port,
+                            username=username,
+                            virtual_ip=virtual_address,
+                            bytes_received=bytes_received,
+                            bytes_sent=bytes_sent,
+                            server_name=os.getenv('SERVER_NAME'),
+                            server_location=os.getenv('SERVER_LOCATION')
+                        ))
         
         # Check for disconnected clients
         for client_id in self.last_clients - current_clients:
@@ -288,13 +290,14 @@ class OpenVPNLogParser:
                     if session_id in self.active_sessions:
                         event.username = self.active_sessions[session_id]
                     
-                    # Only add connect events if we haven't seen this session before
-                    if event.event_type == 'connect':
-                        if session_id not in self.active_sessions:
+                    # Only add events if we haven't notified for this session before
+                    if event.event_type in ['connect', 'authenticated']:
+                        if session_id not in self.notified_sessions:
                             events.append(event)
-                            logger.debug(f"New connection event for session {session_id}")
+                            self.notified_sessions.add(session_id)
+                            logger.debug(f"New {event.event_type} event for session {session_id}")
                         else:
-                            logger.debug(f"Skipping duplicate connect event for session {session_id}")
+                            logger.debug(f"Skipping duplicate {event.event_type} event for session {session_id}")
                     else:
                         events.append(event)
             
