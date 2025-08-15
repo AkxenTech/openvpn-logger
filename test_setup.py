@@ -234,14 +234,13 @@ def test_push_notifications():
                     try:
                         response = input().strip().lower()
                         if response in ['y', 'yes']:
-                            # Test sending a sample notification
-                            test_message = "OpenVPN Logger test notification - Setup verification successful"
+                            # Test sending a sample notification using system alert
                             print("Sending test notification...")
                             try:
-                                result = notification_manager.send_notification(
-                                    title="OpenVPN Logger Test",
-                                    message=test_message,
-                                    priority=0  # Normal priority for test
+                                result = notification_manager.notify_system_alert(
+                                    alert_type="Setup Test",
+                                    details="OpenVPN Logger test notification - Setup verification successful",
+                                    server_name="Test Server"
                                 )
                                 if result:
                                     print("✓ Test notification sent successfully")
