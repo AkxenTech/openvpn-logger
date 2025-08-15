@@ -62,7 +62,7 @@ class OpenVPNLogParser:
         self.load_positions()
     
     def load_positions(self):
-        """Load saved positions from file to avoid reprocessing on restart"""
+        """Load saved positions and notified sessions from file to avoid reprocessing on restart"""
         try:
             position_file = Path("/tmp/openvpn_logger_positions.json")
             if position_file.exists():
@@ -71,18 +71,20 @@ class OpenVPNLogParser:
                     positions = json.load(f)
                     self.last_position = positions.get('status_position', 0)
                     self.log_last_position = positions.get('log_position', 0)
-                    logger.info(f"Loaded positions: status={self.last_position}, log={self.log_last_position}")
+                    self.notified_sessions = set(positions.get('notified_sessions', []))
+                    logger.info(f"Loaded positions: status={self.last_position}, log={self.log_last_position}, notified_sessions={len(self.notified_sessions)}")
         except Exception as e:
             logger.warning(f"Could not load positions: {e}")
     
     def save_positions(self):
-        """Save current positions to file"""
+        """Save current positions and notified sessions to file"""
         try:
             import json
             position_file = Path("/tmp/openvpn_logger_positions.json")
             positions = {
                 'status_position': self.last_position,
-                'log_position': self.log_last_position
+                'log_position': self.log_last_position,
+                'notified_sessions': list(self.notified_sessions)
             }
             with open(position_file, 'w') as f:
                 json.dump(positions, f)
@@ -100,7 +102,6 @@ class OpenVPNLogParser:
                 f.seek(self.last_position)
                 new_lines = f.readlines()
                 self.last_position = f.tell()
-                self.save_positions()  # Save position after reading
                 return new_lines
         except Exception as e:
             logger.error(f"Error reading status log file: {e}")
@@ -116,7 +117,6 @@ class OpenVPNLogParser:
                 f.seek(self.log_last_position)
                 new_lines = f.readlines()
                 self.log_last_position = f.tell()
-                self.save_positions()  # Save position after reading
                 return new_lines
         except Exception as e:
             logger.error(f"Error reading main log file: {e}")
@@ -471,6 +471,9 @@ class OpenVPNLogger:
                     server_name=event.server_name,
                     client_port=event.client_port
                 )
+            
+            # Save positions and notified sessions after processing
+            self.parser.save_positions()
                     
         except Exception as e:
             logger.error(f"Error processing logs: {e}")
