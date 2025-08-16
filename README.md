@@ -49,7 +49,19 @@ status /var/log/openvpn/status.log
 verb 3
 ```
 
-### 3. Create Log Files
+### 3. Create OpenVPN User (if not exists)
+
+The OpenVPN Logger runs as a dedicated user. Create it if it doesn't exist:
+
+```bash
+# Create the openvpn user and group
+sudo useradd -r -s /bin/false openvpn
+
+# Verify the user was created
+id openvpn
+```
+
+### 4. Create Log Files
 
 Create the log files with proper permissions:
 
@@ -73,7 +85,7 @@ sudo chown openvpn:openvpn /var/log/openvpn/positions.json
 sudo chmod 644 /var/log/openvpn/positions.json
 ```
 
-### 4. Restart OpenVPN Server
+### 5. Restart OpenVPN Server
 
 Restart your OpenVPN server to apply the configuration:
 
@@ -81,7 +93,7 @@ Restart your OpenVPN server to apply the configuration:
 sudo systemctl restart openvpn-server@server
 ```
 
-### 5. Verify Logging
+### 6. Verify Logging
 
 Check that logs are being written:
 
@@ -91,7 +103,7 @@ sudo tail -f /var/log/openvpn/server.log
 sudo tail -f /var/log/openvpn/status.log
 ```
 
-### 6. Configure Log Rotation
+### 7. Configure Log Rotation
 
 To prevent disk space issues, configure log rotation for OpenVPN logs:
 
@@ -143,7 +155,7 @@ sudo logrotate -d /etc/logrotate.d/openvpn
 sudo logrotate -f /etc/logrotate.d/openvpn
 ```
 
-### 7. Monitor Disk Usage
+### 8. Monitor Disk Usage
 
 Set up monitoring to prevent disk space issues:
 
@@ -158,7 +170,7 @@ df -h /var/log/
 sudo logrotate -d /etc/logrotate.d/openvpn
 ```
 
-### 8. Positions File Management
+### 9. Positions File Management
 
 The `positions.json` file tracks processed log positions and notified sessions to prevent duplicates. This file can grow over time and should be managed:
 
@@ -229,6 +241,29 @@ sudo crontab -e
 ```
 
 ## Installation
+
+### Quick Setup (Recommended)
+
+For new deployments, use the automated installation script:
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd openvpn-logger
+
+# Run the installation script
+./install.sh
+```
+
+The script will:
+- Install system dependencies
+- Create the openvpn user
+- Set up Python virtual environment
+- Configure log rotation
+- Create systemd service
+- Set up proper file permissions
+
+### Manual Installation
 
 1. **Clone the repository**:
    ```bash
@@ -432,6 +467,21 @@ The logger parses standard OpenVPN log formats:
 3. **Permission Denied**:
    - Ensure the script has read access to OpenVPN log files
    - Run with appropriate permissions if needed
+
+4. **User Creation Issues**:
+   - **Error**: `chown: invalid user: 'openvpn:openvpn'`
+   - **Solution**: Create the openvpn user first:
+     ```bash
+     sudo useradd -r -s /bin/false openvpn
+     id openvpn  # Verify user exists
+     ```
+   - **Error**: `useradd: user 'openvpn' already exists`
+   - **Solution**: User already exists, proceed with installation
+
+5. **Service Won't Start**:
+   - Check if the openvpn user exists: `id openvpn`
+   - Verify file permissions: `ls -la /opt/openvpn-logger/`
+   - Check service logs: `sudo journalctl -u openvpn-logger -f`
 
 ## Security Considerations
 
