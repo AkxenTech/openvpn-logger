@@ -64,8 +64,25 @@ install_system_deps() {
         sudo sed -i '/^deb-src file:\/cdrom/d' /etc/apt/sources.list
         sudo apt-get clean
         
-        sudo apt-get update
-        sudo apt-get install -y python3-pip python3-venv curl gnupg logrotate
+        # Try to update package lists, but continue if it fails
+        print_status "Updating package lists..."
+        if ! sudo apt-get update; then
+            print_warning "Package update failed (likely due to CD-ROM repository). Continuing with installation..."
+        fi
+        
+        # Install required packages
+        print_status "Installing required packages..."
+        if ! sudo apt-get install -y python3-pip python3-venv curl gnupg logrotate; then
+            print_warning "Some packages may not be available due to repository issues."
+            print_warning "Attempting to install essential packages individually..."
+            
+            # Try installing essential packages one by one
+            sudo apt-get install -y python3-pip || print_warning "python3-pip installation failed"
+            sudo apt-get install -y python3-venv || print_warning "python3-venv installation failed"
+            sudo apt-get install -y curl || print_warning "curl installation failed"
+            sudo apt-get install -y gnupg || print_warning "gnupg installation failed"
+            sudo apt-get install -y logrotate || print_warning "logrotate installation failed"
+        fi
         
         # Ask user about MongoDB setup
         echo ""
