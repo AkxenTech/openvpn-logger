@@ -143,6 +143,19 @@ Add the following configuration:
 - **`create 644 root root`**: Create new log files with proper permissions
 - **`postrotate`**: Reload OpenVPN service after rotation
 
+#### Install Logrotate (if not available)
+
+If `logrotate` is not installed:
+
+```bash
+# Install logrotate
+sudo apt-get update
+sudo apt-get install -y logrotate
+
+# Verify installation
+logrotate --version
+```
+
 #### Test Log Rotation
 
 Test the configuration:

@@ -57,7 +57,7 @@ install_system_deps() {
     if command -v apt-get &> /dev/null; then
         # Debian/Ubuntu
         sudo apt-get update
-        sudo apt-get install -y python3-pip python3-venv curl gnupg
+        sudo apt-get install -y python3-pip python3-venv curl gnupg logrotate
         
         # Ask user about MongoDB setup
         echo ""
