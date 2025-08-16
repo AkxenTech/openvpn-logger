@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 import psutil
 import netifaces
 from notifications import NotificationManager
+from config import Config
 
 # Load environment variables
 load_dotenv()
@@ -216,8 +217,8 @@ class OpenVPNLogParser:
                             virtual_ip=virtual_address,
                             bytes_received=bytes_received,
                             bytes_sent=bytes_sent,
-                            server_name=os.getenv('SERVER_NAME'),
-                            server_location=os.getenv('SERVER_LOCATION')
+                            server_name=Config.get_server_config()['name'],
+                            server_location=Config.get_server_config()['location']
                         ))
                     
                     # Only create authenticated event for NEW connections (not existing ones)
@@ -231,8 +232,8 @@ class OpenVPNLogParser:
                             virtual_ip=virtual_address,
                             bytes_received=bytes_received,
                             bytes_sent=bytes_sent,
-                            server_name=os.getenv('SERVER_NAME'),
-                            server_location=os.getenv('SERVER_LOCATION')
+                            server_name=Config.get_server_config()['name'],
+                            server_location=Config.get_server_config()['location']
                         ))
         
         # Check for disconnected clients
@@ -249,8 +250,8 @@ class OpenVPNLogParser:
                 event_type='disconnect',
                 client_ip=client_ip,
                 client_port=client_port,
-                server_name=os.getenv('SERVER_NAME'),
-                server_location=os.getenv('SERVER_LOCATION')
+                server_name=Config.get_server_config()['name'],
+                server_location=Config.get_server_config()['location']
             ))
         
         # Update last clients
@@ -284,8 +285,8 @@ class OpenVPNLogParser:
                             client_ip=client_ip,
                             client_port=client_port,
                             username=username,
-                            server_name=os.getenv('SERVER_NAME'),
-                            server_location=os.getenv('SERVER_LOCATION')
+                            server_name=Config.get_server_config()['name'],
+                            server_location=Config.get_server_config()['location']
                         ))
                         # Remove from active sessions
                         if session_id in self.active_sessions:
@@ -523,8 +524,8 @@ class OpenVPNLogger:
                     'type': 'system_stats',
                     'stats': stats,
                     'interfaces': interfaces,
-                    'server_name': os.getenv('SERVER_NAME'),
-                    'server_location': os.getenv('SERVER_LOCATION')
+                    'server_name': Config.get_server_config()['name'],
+                    'server_location': Config.get_server_config()['location']
                 }
                 
                 self.mongo_logger.collection.insert_one(system_data)

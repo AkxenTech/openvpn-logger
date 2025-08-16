@@ -329,6 +329,8 @@ SERVER_NAME=openvpn-server-01
 SERVER_LOCATION=us-east-1
 ```
 
+**Note**: Server configuration is centralized through the `Config.get_server_config()` function, ensuring consistent usage across all components with environment variable fallbacks.
+
 ### MongoDB Setup
 
 1. **Local MongoDB**:
