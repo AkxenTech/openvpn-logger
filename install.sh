@@ -59,6 +59,9 @@ install_system_deps() {
         # Fix stale CD-ROM repository issue
         print_status "Fixing package repository sources..."
         sudo sed -i '/^deb cdrom:/d' /etc/apt/sources.list
+        sudo sed -i '/^deb-src cdrom:/d' /etc/apt/sources.list
+        sudo sed -i '/^deb file:\/cdrom/d' /etc/apt/sources.list
+        sudo sed -i '/^deb-src file:\/cdrom/d' /etc/apt/sources.list
         sudo apt-get clean
         
         sudo apt-get update
