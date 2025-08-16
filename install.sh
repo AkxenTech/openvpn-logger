@@ -56,6 +56,11 @@ install_system_deps() {
     
     if command -v apt-get &> /dev/null; then
         # Debian/Ubuntu
+        # Fix stale CD-ROM repository issue
+        print_status "Fixing package repository sources..."
+        sudo sed -i '/^deb cdrom:/d' /etc/apt/sources.list
+        sudo apt-get clean
+        
         sudo apt-get update
         sudo apt-get install -y python3-pip python3-venv curl gnupg logrotate
         

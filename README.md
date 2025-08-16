@@ -498,6 +498,16 @@ The logger parses standard OpenVPN log formats:
    - Verify file permissions: `ls -la /opt/openvpn-logger/`
    - Check service logs: `sudo journalctl -u openvpn-logger -f`
 
+6. **Package Repository Errors**:
+   - **Error**: `The repository 'file:/cdrom jammy Release' no longer has a Release file`
+   - **Solution**: Remove stale CD-ROM repository entries:
+     ```bash
+     sudo sed -i '/^deb cdrom:/d' /etc/apt/sources.list
+     sudo apt-get clean
+     sudo apt-get update
+     ```
+   - **Alternative**: The install script now automatically fixes this issue
+
 ## Security Considerations
 
 - Store sensitive configuration in environment variables
