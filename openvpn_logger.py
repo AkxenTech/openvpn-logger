@@ -422,13 +422,15 @@ class SystemMonitor:
             cpu_percent = psutil.cpu_percent(interval=1)
             memory = psutil.virtual_memory()
             disk = psutil.disk_usage('/')
+            uptime = int(time.time() - psutil.boot_time())
             
             return {
                 'cpu_percent': cpu_percent,
                 'memory_percent': memory.percent,
                 'memory_available': memory.available,
                 'disk_percent': disk.percent,
-                'disk_free': disk.free
+                'disk_free': disk.free,
+                'uptime': uptime
             }
         except Exception as e:
             logger.error(f"Failed to get system stats: {e}")
