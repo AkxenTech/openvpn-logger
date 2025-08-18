@@ -59,6 +59,12 @@ class OpenVPNLogParser:
         self.log_last_position = 0  # Track position in main log file
         self.notified_sessions = set()  # Track which sessions have been notified to prevent duplicates
         
+        # Track file metadata for rotation detection
+        self.status_file_inode = None
+        self.status_file_mtime = None
+        self.log_file_inode = None
+        self.log_file_mtime = None
+        
         # Load persisted positions to avoid reprocessing on restart
         self.load_positions()
     
@@ -73,6 +79,13 @@ class OpenVPNLogParser:
                     self.last_position = positions.get('status_position', 0)
                     self.log_last_position = positions.get('log_position', 0)
                     self.notified_sessions = set(positions.get('notified_sessions', []))
+                    
+                    # Load file metadata for rotation detection
+                    self.status_file_inode = positions.get('status_file_inode')
+                    self.status_file_mtime = positions.get('status_file_mtime')
+                    self.log_file_inode = positions.get('log_file_inode')
+                    self.log_file_mtime = positions.get('log_file_mtime')
+                    
                     logger.info(f"Loaded positions: status={self.last_position}, log={self.log_last_position}, notified_sessions={len(self.notified_sessions)}")
             else:
                 logger.info("No existing positions file found, starting fresh")
@@ -87,10 +100,18 @@ class OpenVPNLogParser:
             position_file = Path("/var/log/openvpn/positions.json")
             logger.info(f"Attempting to save to: {position_file}")
             
+            # Get current file metadata
+            status_stat = self.status_path.stat() if self.status_path.exists() else None
+            log_stat = self.log_path.stat() if self.log_path and self.log_path.exists() else None
+            
             positions = {
                 'status_position': self.last_position,
                 'log_position': self.log_last_position,
-                'notified_sessions': list(self.notified_sessions)
+                'notified_sessions': list(self.notified_sessions),
+                'status_file_inode': status_stat.st_ino if status_stat else None,
+                'status_file_mtime': status_stat.st_mtime if status_stat else None,
+                'log_file_inode': log_stat.st_ino if log_stat else None,
+                'log_file_mtime': log_stat.st_mtime if log_stat else None
             }
             logger.info(f"Positions data: {positions}")
             
@@ -110,6 +131,38 @@ class OpenVPNLogParser:
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
         
+    def detect_log_rotation(self, file_path: Path, last_position: int, file_inode: int = None, file_mtime: float = None) -> bool:
+        """Detect if a log file has been rotated"""
+        if not file_path.exists():
+            return True  # File doesn't exist, consider it rotated
+            
+        try:
+            stat = file_path.stat()
+            current_size = stat.st_size
+            current_inode = stat.st_ino
+            current_mtime = stat.st_mtime
+            
+            # Method 1: File size is smaller than our position (file was truncated/rotated)
+            if current_size < last_position:
+                logger.info(f"Log rotation detected: file size ({current_size}) < position ({last_position})")
+                return True
+            
+            # Method 2: File inode changed (file was replaced)
+            if file_inode is not None and current_inode != file_inode:
+                logger.info(f"Log rotation detected: inode changed from {file_inode} to {current_inode}")
+                return True
+            
+            # Method 3: File modification time is newer than expected (file was recreated)
+            if file_mtime is not None and current_mtime > file_mtime + 60:  # Allow 1 minute buffer
+                logger.info(f"Log rotation detected: modification time changed significantly")
+                return True
+                
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Error detecting log rotation: {e}")
+            return False
+    
     def get_new_lines(self) -> List[str]:
         """Read new lines from the status log file since last check"""
         if not self.status_path.exists():
@@ -117,6 +170,13 @@ class OpenVPNLogParser:
             return []
             
         try:
+            # Check for log rotation
+            if self.detect_log_rotation(self.status_path, self.last_position, self.status_file_inode, self.status_file_mtime):
+                logger.info("Status log file has been rotated. Resetting position and clearing notified sessions.")
+                self.last_position = 0
+                # Clear notified sessions for this file to avoid missing new events
+                self.notified_sessions.clear()
+            
             with open(self.status_path, 'r') as f:
                 f.seek(self.last_position)
                 new_lines = f.readlines()
@@ -132,6 +192,13 @@ class OpenVPNLogParser:
             return []
             
         try:
+            # Check for log rotation
+            if self.detect_log_rotation(self.log_path, self.log_last_position, self.log_file_inode, self.log_file_mtime):
+                logger.info("Main log file has been rotated. Resetting position and clearing notified sessions.")
+                self.log_last_position = 0
+                # Clear notified sessions for this file to avoid missing new events
+                self.notified_sessions.clear()
+            
             with open(self.log_path, 'r') as f:
                 f.seek(self.log_last_position)
                 new_lines = f.readlines()
