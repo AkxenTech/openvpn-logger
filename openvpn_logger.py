@@ -65,6 +65,9 @@ class OpenVPNLogParser:
         self.log_file_inode = None
         self.log_file_mtime = None
         
+        # Track notification timestamps for cleanup
+        self.notification_timestamps = {}  # session_key -> timestamp
+        
         # Load persisted positions to avoid reprocessing on restart
         self.load_positions()
     
@@ -85,6 +88,9 @@ class OpenVPNLogParser:
                     self.status_file_mtime = positions.get('status_file_mtime')
                     self.log_file_inode = positions.get('log_file_inode')
                     self.log_file_mtime = positions.get('log_file_mtime')
+                    
+                    # Load notification timestamps
+                    self.notification_timestamps = positions.get('notification_timestamps', {})
                     
                     logger.info(f"Loaded positions: status={self.last_position}, log={self.log_last_position}, notified_sessions={len(self.notified_sessions)}")
             else:
@@ -108,6 +114,7 @@ class OpenVPNLogParser:
                 'status_position': self.last_position,
                 'log_position': self.log_last_position,
                 'notified_sessions': list(self.notified_sessions),
+                'notification_timestamps': self.notification_timestamps,
                 'status_file_inode': status_stat.st_ino if status_stat else None,
                 'status_file_mtime': status_stat.st_mtime if status_stat else None,
                 'log_file_inode': log_stat.st_ino if log_stat else None,
@@ -131,6 +138,35 @@ class OpenVPNLogParser:
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
         
+    def cleanup_old_notifications(self):
+        """Clean up old notification tracking to prevent memory bloat"""
+        try:
+            from datetime import datetime, timedelta
+            
+            # Keep notifications for 24 hours
+            cutoff_time = datetime.now() - timedelta(hours=24)
+            
+            # Clean up old notification timestamps
+            old_keys = []
+            for session_key, timestamp_str in self.notification_timestamps.items():
+                try:
+                    timestamp = datetime.fromisoformat(timestamp_str)
+                    if timestamp < cutoff_time:
+                        old_keys.append(session_key)
+                except:
+                    old_keys.append(session_key)  # Remove invalid timestamps
+            
+            # Remove old entries
+            for key in old_keys:
+                self.notification_timestamps.pop(key, None)
+                self.notified_sessions.discard(key)
+            
+            if old_keys:
+                logger.info(f"Cleaned up {len(old_keys)} old notification entries")
+                
+        except Exception as e:
+            logger.warning(f"Error cleaning up old notifications: {e}")
+    
     def detect_log_rotation(self, file_path: Path, last_position: int, file_inode: int = None, file_mtime: float = None) -> bool:
         """Detect if a log file has been rotated"""
         if not file_path.exists():
@@ -172,10 +208,9 @@ class OpenVPNLogParser:
         try:
             # Check for log rotation
             if self.detect_log_rotation(self.status_path, self.last_position, self.status_file_inode, self.status_file_mtime):
-                logger.info("Status log file has been rotated. Resetting position and clearing notified sessions.")
+                logger.info("Status log file has been rotated. Resetting position.")
                 self.last_position = 0
-                # Clear notified sessions for this file to avoid missing new events
-                self.notified_sessions.clear()
+                # Don't clear notified sessions - let the duplicate detection handle it
             
             with open(self.status_path, 'r') as f:
                 f.seek(self.last_position)
@@ -194,10 +229,9 @@ class OpenVPNLogParser:
         try:
             # Check for log rotation
             if self.detect_log_rotation(self.log_path, self.log_last_position, self.log_file_inode, self.log_file_mtime):
-                logger.info("Main log file has been rotated. Resetting position and clearing notified sessions.")
+                logger.info("Main log file has been rotated. Resetting position.")
                 self.log_last_position = 0
-                # Clear notified sessions for this file to avoid missing new events
-                self.notified_sessions.clear()
+                # Don't clear notified sessions - let the duplicate detection handle it
             
             with open(self.log_path, 'r') as f:
                 f.seek(self.log_last_position)
@@ -539,6 +573,9 @@ class OpenVPNLogger:
             events = self.parser.process_logs()
             logger.info(f"Processed {len(events)} events from logs")
             
+            # Clean up old notifications periodically
+            self.parser.cleanup_old_notifications()
+            
             # Filter out duplicate events before logging to DB
             filtered_events = []
             for event in events:
@@ -551,6 +588,8 @@ class OpenVPNLogger:
                 if event_key not in self.parser.notified_sessions:
                     filtered_events.append(event)
                     self.parser.notified_sessions.add(event_key)
+                    # Store timestamp for cleanup
+                    self.parser.notification_timestamps[event_key] = datetime.now().isoformat()
                     logger.debug(f"New {event.event_type} event for session {session_id}")
                 else:
                     logger.debug(f"Skipping duplicate {event.event_type} event for session {session_id}")
