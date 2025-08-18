@@ -92,7 +92,10 @@ class OpenVPNLogParser:
                     # Load notification timestamps
                     self.notification_timestamps = positions.get('notification_timestamps', {})
                     
-                    logger.info(f"Loaded positions: status={self.last_position}, log={self.log_last_position}, notified_sessions={len(self.notified_sessions)}")
+                    # Load last clients to prevent duplicate connect/authenticated events
+                    self.last_clients = set(positions.get('last_clients', []))
+                    
+                    logger.info(f"Loaded positions: status={self.last_position}, log={self.log_last_position}, notified_sessions={len(self.notified_sessions)}, last_clients={len(self.last_clients)}")
             else:
                 logger.info("No existing positions file found, starting fresh")
         except Exception as e:
@@ -115,6 +118,7 @@ class OpenVPNLogParser:
                 'log_position': self.log_last_position,
                 'notified_sessions': list(self.notified_sessions),
                 'notification_timestamps': self.notification_timestamps,
+                'last_clients': list(self.last_clients),
                 'status_file_inode': status_stat.st_ino if status_stat else None,
                 'status_file_mtime': status_stat.st_mtime if status_stat else None,
                 'log_file_inode': log_stat.st_ino if log_stat else None,
