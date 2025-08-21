@@ -55,6 +55,7 @@ class OpenVPNLogParser:
         self.last_position = 0
         self.last_clients = set()  # Track previous clients for change detection
         self.notified_sessions = set()  # Track which sessions have been notified to prevent duplicates
+        self.client_usernames = {}  # Store usernames for clients (IP:PORT -> username)
         
         # Track file metadata for rotation detection
         self.status_file_inode = None
@@ -87,11 +88,15 @@ class OpenVPNLogParser:
                     # Load last clients to prevent duplicate connect/authenticated events
                     self.last_clients = set(positions.get('last_clients', []))
                     
+                    # Load client usernames
+                    self.client_usernames = positions.get('client_usernames', {})
+                    
                     # Optionally reset last_clients on startup to force new connect events
                     # This can be enabled by setting RESET_CLIENTS_ON_STARTUP=true in .env
                     if os.getenv('RESET_CLIENTS_ON_STARTUP', 'false').lower() == 'true':
                         logger.info("RESET_CLIENTS_ON_STARTUP enabled - clearing last_clients to force new connect events")
                         self.last_clients = set()
+                        self.client_usernames = {}
                     
                     logger.info(f"Loaded positions: status={self.last_position}, notified_sessions={len(self.notified_sessions)}, last_clients={len(self.last_clients)}")
             else:
@@ -115,6 +120,7 @@ class OpenVPNLogParser:
                 'notified_sessions': list(self.notified_sessions),
                 'notification_timestamps': self.notification_timestamps,
                 'last_clients': list(self.last_clients),
+                'client_usernames': self.client_usernames,
                 'status_file_inode': status_stat.st_ino if status_stat else None,
                 'status_file_mtime': status_stat.st_mtime if status_stat else None
             }
@@ -302,6 +308,9 @@ class OpenVPNLogParser:
                     client_id = f"{client_ip}:{client_port}"
                     current_clients.add(client_id)
                     
+                    # Store username for this client
+                    self.client_usernames[client_id] = username
+                    
                     # Check if this is a new client (connect event)
                     if client_id not in self.last_clients:
                         logger.info(f"Creating connect event for new client: {client_id}")
@@ -346,15 +355,23 @@ class OpenVPNLogParser:
             else:
                 client_ip = client_id
                 client_port = 0
-                
+            
+            # Get username from stored data
+            username = self.client_usernames.get(client_id, None)
+            
             events.append(ConnectionEvent(
                 timestamp=datetime.now(),
                 event_type='disconnect',
                 client_ip=client_ip,
                 client_port=client_port,
+                username=username,
                 server_name=Config.get_server_config()['name'],
                 server_location=Config.get_server_config()['location']
             ))
+            
+            # Clean up stored username for disconnected client
+            if client_id in self.client_usernames:
+                del self.client_usernames[client_id]
         
         # Update last clients
         logger.debug(f"Current clients: {current_clients}")
