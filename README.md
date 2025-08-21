@@ -127,7 +127,10 @@ Add the following configuration:
     notifempty
     create 644 root root
     postrotate
-        systemctl reload openvpn-server@server
+        # Force OpenVPN to reopen log files by restarting the service
+        systemctl restart openvpn-server@server
+        # Alternative: send SIGHUP signal to force log file reopening
+        # pkill -HUP -f "openvpn.*server"
     endscript
 }
 ```
@@ -141,7 +144,7 @@ Add the following configuration:
 - **`delaycompress`**: Don't compress the most recent rotated file
 - **`notifempty`**: Don't rotate empty files
 - **`create 644 root root`**: Create new log files with proper permissions
-- **`postrotate`**: Reload OpenVPN service after rotation
+- **`postrotate`**: Restart OpenVPN service after rotation to force log file reopening
 
 #### Install Logrotate (if not available)
 
@@ -186,6 +189,68 @@ sudo logrotate -d /etc/logrotate.d/openvpn
 ### 9. Positions File Management
 
 The `positions.json` file tracks processed log positions and notified sessions to prevent duplicates. This file can grow over time and should be managed:
+
+#### How Positions File Handles Log Rotation
+
+The `positions.json` file intelligently handles log rotation through several mechanisms:
+
+1. **Log Rotation Detection**: 
+   - Compares current file size with saved position
+   - Tracks file inodes (unique file identifiers)
+   - Monitors file modification times
+   - Detects when files are truncated, replaced, or recreated
+
+2. **Position Reset on Rotation**:
+   - When rotation is detected, positions are reset to 0
+   - File metadata (inode, modification time) is updated
+   - Notified sessions are preserved to prevent duplicate notifications
+
+3. **Handling OpenVPN Writing to Rotated Files**:
+   - If OpenVPN continues writing to old rotated files, the system detects this
+   - The fix script can reset positions.json if needed
+   - Manual intervention may be required to restart OpenVPN service
+
+#### Username Detection
+
+The system extracts usernames directly from the OpenVPN status log (`/var/log/openvpn/status.log`) using the `CLIENT_LIST` entries:
+
+**Status Log Format**:
+```
+CLIENT_LIST,common_name,real_address,virtual_address,virtual_ipv6,bytes_received,bytes_sent,connected_since,username
+```
+
+**Username Extraction Logic**:
+1. **Primary**: Use the `username` field from CLIENT_LIST (position 9)
+2. **Fallback**: Use `common_name` if username is empty, "UNDEF", or not present
+3. **Cleaning**: Remove quotes and handle edge cases
+
+**Example CLIENT_LIST Entry**:
+```
+CLIENT_LIST,deebee,209.29.167.213:60326,10.8.0.2,fddd:1194:1194:1194::1000,1024,2048,1692456000,deebee
+```
+
+**Debug Status Log Format**:
+```bash
+python3 test_notifications.py --debug-status
+```
+
+#### Example positions.json Structure:
+```json
+{
+  "status_position": 1024,
+  "log_position": 2048,
+  "notified_sessions": ["192.168.1.100:12345:connect", "192.168.1.100:12345:authenticated"],
+  "notification_timestamps": {
+    "192.168.1.100:12345:connect": "2025-08-19T10:30:00",
+    "192.168.1.100:12345:authenticated": "2025-08-19T10:30:05"
+  },
+  "last_clients": ["192.168.1.100:12345"],
+  "status_file_inode": 123456,
+  "status_file_mtime": 1692456000.0,
+  "log_file_inode": 123457,
+  "log_file_mtime": 1692456000.0
+}
+```
 
 #### Monitor Positions File Size
 
@@ -507,6 +572,27 @@ The logger parses standard OpenVPN log formats:
      sudo apt-get update
      ```
    - **Alternative**: The install script now automatically fixes this issue
+
+7. **OpenVPN Writing to Rotated Log Files**:
+   - **Problem**: OpenVPN continues writing to old log files after rotation
+   - **Symptoms**: New logs appear in `server.log.1` instead of `server.log`
+   - **Solution**: Restart OpenVPN service after log rotation:
+     ```bash
+     # Manual fix
+     sudo systemctl restart openvpn-server@server
+     
+     # Verify logs are being written to current file
+     sudo tail -f /var/log/openvpn/server.log
+     ```
+   - **Prevention**: The logrotate configuration now automatically restarts OpenVPN after rotation
+   - **Alternative**: Send SIGHUP signal to force log file reopening:
+     ```bash
+     sudo pkill -HUP -f "openvpn.*server"
+     ```
+   - **Automated Fix**: Use the provided fix script:
+     ```bash
+     ./fix_log_rotation.sh
+     ```
 
 ## Security Considerations
 

@@ -224,7 +224,10 @@ setup_log_rotation() {
     notifempty
     create 644 root root
     postrotate
-        systemctl reload openvpn-server@server
+        # Force OpenVPN to reopen log files by restarting the service
+        systemctl restart openvpn-server@server
+        # Alternative: send SIGHUP signal to force log file reopening
+        # pkill -HUP -f "openvpn.*server"
     endscript
 }
 EOF

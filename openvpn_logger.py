@@ -55,7 +55,6 @@ class OpenVPNLogParser:
         self.log_path = Path(log_path) if log_path else None
         self.last_position = 0
         self.last_clients = set()  # Track previous clients for change detection
-        self.active_sessions = {}  # Track active sessions to prevent duplicate notifications
         self.log_last_position = 0  # Track position in main log file
         self.notified_sessions = set()  # Track which sessions have been notified to prevent duplicates
         
@@ -94,6 +93,12 @@ class OpenVPNLogParser:
                     
                     # Load last clients to prevent duplicate connect/authenticated events
                     self.last_clients = set(positions.get('last_clients', []))
+                    
+                    # Optionally reset last_clients on startup to force new connect events
+                    # This can be enabled by setting RESET_CLIENTS_ON_STARTUP=true in .env
+                    if os.getenv('RESET_CLIENTS_ON_STARTUP', 'false').lower() == 'true':
+                        logger.info("RESET_CLIENTS_ON_STARTUP enabled - clearing last_clients to force new connect events")
+                        self.last_clients = set()
                     
                     logger.info(f"Loaded positions: status={self.last_position}, log={self.log_last_position}, notified_sessions={len(self.notified_sessions)}, last_clients={len(self.last_clients)}")
             else:
@@ -214,6 +219,11 @@ class OpenVPNLogParser:
             if self.detect_log_rotation(self.status_path, self.last_position, self.status_file_inode, self.status_file_mtime):
                 logger.info("Status log file has been rotated. Resetting position.")
                 self.last_position = 0
+                # Update file metadata for the new file
+                if self.status_path.exists():
+                    stat = self.status_path.stat()
+                    self.status_file_inode = stat.st_ino
+                    self.status_file_mtime = stat.st_mtime
                 # Don't clear notified sessions - let the duplicate detection handle it
             
             with open(self.status_path, 'r') as f:
@@ -235,6 +245,11 @@ class OpenVPNLogParser:
             if self.detect_log_rotation(self.log_path, self.log_last_position, self.log_file_inode, self.log_file_mtime):
                 logger.info("Main log file has been rotated. Resetting position.")
                 self.log_last_position = 0
+                # Update file metadata for the new file
+                if self.log_path and self.log_path.exists():
+                    stat = self.log_path.stat()
+                    self.log_file_inode = stat.st_ino
+                    self.log_file_mtime = stat.st_mtime
                 # Don't clear notified sessions - let the duplicate detection handle it
             
             with open(self.log_path, 'r') as f:
@@ -262,6 +277,61 @@ class OpenVPNLogParser:
         
         return None, None, None, None
     
+    def debug_status_log_format(self):
+        """Debug method to show the format of the status log"""
+        try:
+            if not self.status_path.exists():
+                logger.warning(f"Status log file not found: {self.status_path}")
+                return
+            
+            with open(self.status_path, 'r') as f:
+                content = f.read()
+            
+            lines = content.split('\n')
+            logger.info(f"Status log has {len(lines)} lines")
+            
+            for line in lines:
+                if line.startswith('CLIENT_LIST,'):
+                    parts = line.split(',')
+                    logger.info(f"CLIENT_LIST format: {len(parts)} parts")
+                    logger.info(f"Parts: {parts}")
+                    break
+                    
+        except Exception as e:
+            logger.error(f"Error debugging status log format: {e}")
+    
+    def check_for_rotated_file_writing(self) -> bool:
+        """Check if OpenVPN is writing to rotated log files instead of current ones"""
+        try:
+            # Check if current log file is being written to
+            if self.log_path and self.log_path.exists():
+                current_size = self.log_path.stat().st_size
+                
+                # Wait a moment and check again
+                import time
+                time.sleep(2)
+                
+                new_size = self.log_path.stat().st_size
+                
+                # If current file is not growing, check rotated files
+                if new_size == current_size:
+                    # Check if rotated files are growing
+                    rotated_file = Path(str(self.log_path) + ".1")
+                    if rotated_file.exists():
+                        rotated_size = rotated_file.stat().st_size
+                        time.sleep(2)
+                        new_rotated_size = rotated_file.stat().st_size
+                        
+                        if new_rotated_size > rotated_size:
+                            logger.warning(f"OpenVPN is writing to rotated file {rotated_file} instead of current file {self.log_path}")
+                            return True
+            
+            return False
+            
+        except Exception as e:
+            logger.warning(f"Error checking for rotated file writing: {e}")
+            return False
+    
     def detect_logout_from_log(self, line: str) -> tuple:
         """Detect logout events from SIGTERM messages"""
         # Pattern: username/IP:PORT SIGTERM[soft,remote-exit] received
@@ -287,17 +357,33 @@ class OpenVPNLogParser:
         
         for line in lines:
             if line.startswith('CLIENT_LIST,'):
-                # Parse client information
-                parts = line.split(',')
-                if len(parts) >= 8:
-                    common_name = parts[1]
-                    real_address = parts[2]
-                    virtual_address = parts[3]
-                    virtual_ipv6 = parts[4]
-                    bytes_received = int(parts[5]) if parts[5].isdigit() else 0
-                    bytes_sent = int(parts[6]) if parts[6].isdigit() else 0
-                    connected_since = parts[7]
-                    username = parts[9] if len(parts) > 9 else None
+                logger.debug(f"Processing CLIENT_LIST line: {line.strip()}")
+                                    # Parse client information
+                    parts = line.split(',')
+                    if len(parts) >= 8:
+                        common_name = parts[1]
+                        real_address = parts[2]
+                        virtual_address = parts[3]
+                        virtual_ipv6 = parts[4]
+                        bytes_received = int(parts[5]) if parts[5].isdigit() else 0
+                        bytes_sent = int(parts[6]) if parts[6].isdigit() else 0
+                        connected_since = parts[7]
+                        # Username is typically in position 9, but let's be more robust
+                        username = None
+                        if len(parts) > 9:
+                            username = parts[9]
+                        elif len(parts) > 1:
+                            # If no explicit username field, use common_name as username
+                            username = common_name
+                        
+                        # Clean up username (remove quotes if present)
+                        if username:
+                            username = username.strip('"')
+                            # Use common_name if username is empty or "UNDEF"
+                            if not username or username == "UNDEF":
+                                username = common_name
+                        
+                        logger.debug(f"Parsed client: {common_name} ({username}) from {real_address}")
                     
                     # Parse real address
                     if ':' in real_address:
@@ -313,6 +399,7 @@ class OpenVPNLogParser:
                     
                     # Check if this is a new client (connect event)
                     if client_id not in self.last_clients:
+                        logger.info(f"Creating connect event for new client: {client_id}")
                         events.append(ConnectionEvent(
                             timestamp=datetime.now(),
                             event_type='connect',
@@ -325,9 +412,12 @@ class OpenVPNLogParser:
                             server_name=Config.get_server_config()['name'],
                             server_location=Config.get_server_config()['location']
                         ))
+                    else:
+                        logger.debug(f"Client {client_id} already exists, skipping connect event")
                     
                     # Only create authenticated event for NEW connections (not existing ones)
                     if client_id not in self.last_clients:
+                        logger.info(f"Creating authenticated event for new client: {client_id}")
                         events.append(ConnectionEvent(
                             timestamp=datetime.now(),
                             event_type='authenticated',
@@ -340,6 +430,8 @@ class OpenVPNLogParser:
                             server_name=Config.get_server_config()['name'],
                             server_location=Config.get_server_config()['location']
                         ))
+                    else:
+                        logger.debug(f"Client {client_id} already exists, skipping authenticated event")
         
         # Check for disconnected clients
         for client_id in self.last_clients - current_clients:
@@ -360,6 +452,11 @@ class OpenVPNLogParser:
             ))
         
         # Update last clients
+        logger.debug(f"Current clients: {current_clients}")
+        logger.debug(f"Previous clients: {self.last_clients}")
+        logger.debug(f"New clients: {current_clients - self.last_clients}")
+        logger.debug(f"Disconnected clients: {self.last_clients - current_clients}")
+        
         self.last_clients = current_clients
         
         return events
@@ -369,18 +466,11 @@ class OpenVPNLogParser:
         events = []
         
         try:
-            # Process main log file for usernames and logout events
+            # Process main log file for logout events (SIGTERM messages)
             if self.log_path and self.log_path.exists():
                 log_lines = self.get_new_log_lines()
                 for line in log_lines:
-                    # Check for login events with username
-                    username, session_id, client_ip, client_port = self.extract_username_from_log(line)
-                    if username and session_id:
-                        # Store username for this session
-                        self.active_sessions[session_id] = username
-                        logger.debug(f"Found login for user {username} with session {session_id}")
-                    
-                    # Check for logout events
+                    # Check for logout events from SIGTERM messages
                     username, session_id, client_ip, client_port = self.detect_logout_from_log(line)
                     if username and session_id:
                         # Create logout event
@@ -393,28 +483,16 @@ class OpenVPNLogParser:
                             server_name=Config.get_server_config()['name'],
                             server_location=Config.get_server_config()['location']
                         ))
-                        # Remove from active sessions
-                        if session_id in self.active_sessions:
-                            del self.active_sessions[session_id]
                         logger.debug(f"Found logout for user {username} with session {session_id}")
             
-            # Process status log for connection events
+            # Process status log for connection events (primary source)
             if self.status_path.exists():
                 with open(self.status_path, 'r') as f:
                     content = f.read()
                 
-                # Parse status log events
+                # Parse status log events (includes usernames from CLIENT_LIST)
                 status_events = self.parse_status_log(content)
-                
-                # Enhance events with usernames
-                for event in status_events:
-                    session_id = f"{event.client_ip}:{event.client_port}"
-                    
-                    # Add username if available from active sessions
-                    if session_id in self.active_sessions:
-                        event.username = self.active_sessions[session_id]
-                    
-                    events.append(event)
+                events.extend(status_events)
             
             return events
             
@@ -605,7 +683,8 @@ class OpenVPNLogger:
                 self.mongo_logger.log_connection_event(event)
                 
                 # Send notification for connection events
-                self.notification_manager.notify_connection_event(
+                logger.info(f"Sending notification for {event.event_type} event: {event.client_ip}:{event.client_port}")
+                result = self.notification_manager.notify_connection_event(
                     event_type=event.event_type,
                     client_ip=event.client_ip,
                     username=event.username,
@@ -613,6 +692,10 @@ class OpenVPNLogger:
                     server_name=event.server_name,
                     client_port=event.client_port
                 )
+                if result:
+                    logger.info(f"✓ Notification sent successfully for {event.event_type}")
+                else:
+                    logger.warning(f"⚠ Failed to send notification for {event.event_type}")
             
             logger.info("About to save positions")
             # Save positions and notified sessions after processing
