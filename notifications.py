@@ -32,9 +32,29 @@ class PushoverNotifier:
         self.config = config
         self.api_url = "https://api.pushover.net/1/messages.json"
     
+    def validate_config(self) -> bool:
+        """Validate Pushover configuration"""
+        if not self.config.api_token or not self.config.user_key:
+            logger.error("Pushover configuration incomplete: missing API token or user key")
+            return False
+        
+        # Check if API token looks valid (should be 30 characters)
+        if len(self.config.api_token) != 30:
+            logger.warning(f"Pushover API token length seems incorrect: {len(self.config.api_token)} characters")
+        
+        # Check if user key looks valid (should be 30 characters)
+        if len(self.config.user_key) != 30:
+            logger.warning(f"Pushover user key length seems incorrect: {len(self.config.user_key)} characters")
+        
+        return True
+    
     def send_notification(self, title: str, message: str, priority: int = None) -> bool:
         """Send a notification via Pushover"""
         try:
+            # Validate configuration first
+            if not self.validate_config():
+                return False
+            
             payload = {
                 'token': self.config.api_token,
                 'user': self.config.user_key,
@@ -50,9 +70,20 @@ class PushoverNotifier:
             if self.config.device:
                 payload['device'] = self.config.device
             
-            response = requests.post(self.api_url, data=payload, timeout=10)
-            response.raise_for_status()
+            # Log the payload for debugging (without sensitive data)
+            debug_payload = payload.copy()
+            if 'token' in debug_payload:
+                debug_payload['token'] = debug_payload['token'][:10] + '...'
+            if 'user' in debug_payload:
+                debug_payload['user'] = debug_payload['user'][:10] + '...'
+            logger.debug(f"Pushover payload: {debug_payload}")
             
+            response = requests.post(self.api_url, data=payload, timeout=10)
+            
+            if response.status_code != 200:
+                logger.error(f"Pushover API error: {response.status_code} - {response.text}")
+                return False
+                
             result = response.json()
             if result.get('status') == 1:
                 logger.info(f"Pushover notification sent: {title}")
@@ -63,6 +94,8 @@ class PushoverNotifier:
                 
         except Exception as e:
             logger.error(f"Failed to send Pushover notification: {e}")
+            if hasattr(e, 'response') and e.response is not None:
+                logger.error(f"Response content: {e.response.text}")
             return False
     
     def notify_connection_event(self, event_type: str, client_ip: str, username: str = None, 
