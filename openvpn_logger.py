@@ -265,31 +265,31 @@ class OpenVPNLogParser:
                 logger.debug(f"Processing CLIENT_LIST line: {line.strip()}")
                 # Parse client information
                 parts = line.split(',')
-                    if len(parts) >= 8:
-                        common_name = parts[1]
-                        real_address = parts[2]
-                        virtual_address = parts[3]
-                        virtual_ipv6 = parts[4]
-                        bytes_received = int(parts[5]) if parts[5].isdigit() else 0
-                        bytes_sent = int(parts[6]) if parts[6].isdigit() else 0
-                        connected_since = parts[7]
-                        # Username is typically in position 9, but let's be more robust
-                        username = None
-                        if len(parts) > 9:
-                            username = parts[9]
-                        elif len(parts) > 1:
-                            # If no explicit username field, use common_name as username
-                            username = common_name
-                        
-                        # Clean up username (remove quotes if present)
-                        if username:
-                            username = username.strip('"')
-                            # Use common_name if username is empty or "UNDEF"
-                            if not username or username == "UNDEF":
-                                username = common_name
-                        
-                        logger.debug(f"Parsed client: {common_name} ({username}) from {real_address}")
+                if len(parts) >= 8:
+                    common_name = parts[1]
+                    real_address = parts[2]
+                    virtual_address = parts[3]
+                    virtual_ipv6 = parts[4]
+                    bytes_received = int(parts[5]) if parts[5].isdigit() else 0
+                    bytes_sent = int(parts[6]) if parts[6].isdigit() else 0
+                    connected_since = parts[7]
+                    # Username is typically in position 9, but let's be more robust
+                    username = None
+                    if len(parts) > 9:
+                        username = parts[9]
+                    elif len(parts) > 1:
+                        # If no explicit username field, use common_name as username
+                        username = common_name
                     
+                    # Clean up username (remove quotes if present)
+                    if username:
+                        username = username.strip('"')
+                        # Use common_name if username is empty or "UNDEF"
+                        if not username or username == "UNDEF":
+                            username = common_name
+                    
+                    logger.debug(f"Parsed client: {common_name} ({username}) from {real_address}")
+                
                     # Parse real address
                     if ':' in real_address:
                         client_ip, client_port = real_address.rsplit(':', 1)
