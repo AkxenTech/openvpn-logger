@@ -358,8 +358,8 @@ class OpenVPNLogParser:
         for line in lines:
             if line.startswith('CLIENT_LIST,'):
                 logger.debug(f"Processing CLIENT_LIST line: {line.strip()}")
-                                    # Parse client information
-                    parts = line.split(',')
+                # Parse client information
+                parts = line.split(',')
                     if len(parts) >= 8:
                         common_name = parts[1]
                         real_address = parts[2]
